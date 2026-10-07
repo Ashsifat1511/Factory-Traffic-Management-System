@@ -25,6 +25,10 @@ export class Security {
     );
   }
 
+  async userExists(username: string): Promise<boolean> {
+    return (await this.pool.query('SELECT 1 FROM users WHERE username = $1', [username])).rowCount! > 0;
+  }
+
   /** Returns a session token, or null. Five failures lock the account for 15 minutes. */
   async login(username: string, password: string, ip: string, userAgent: string): Promise<{ token: string } | { error: 'INVALID' | 'LOCKED' }> {
     const { rows } = await this.pool.query('SELECT * FROM users WHERE username = $1 AND disabled_at IS NULL', [username]);

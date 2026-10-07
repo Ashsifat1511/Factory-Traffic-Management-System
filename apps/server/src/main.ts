@@ -44,6 +44,7 @@ const app = await buildApp({
   runtime, store, security, simulationMode: env.SIMULATION_MODE, dashboardOrigin: env.DASHBOARD_ORIGIN,
   cookieSecure: env.SESSION_COOKIE_SECURE, simulator: { url: env.CONTROLLER_SIM_URL, token: env.BACKEND_TO_SIM_TOKEN },
   ...(mqttClient ? { brokerConnected: () => mqttClient.connected } : {}),
+  production: env.NODE_ENV === 'production',
 });
 await store.audit('SYSTEM', null, [{ type: 'SYSTEM_STARTED', severity: 'INFO', details: { simulationMode: env.SIMULATION_MODE, transport: env.CONTROLLER_TRANSPORT } }], 'SYSTEM');
 await runtime.start();

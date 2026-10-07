@@ -164,6 +164,75 @@ describe('database guarantees', () => {
   });
 });
 
+describe('admin, history, docs and live updates', () => {
+  it('lets an ADMIN create users (201, then 409) and forbids operators', async () => {
+    const admin = await login(b, 'admin');
+    const user = { username: 'shift.lead', password: 'shift-lead-password-1', role: 'OPERATOR' };
+    const post = (cookie: string, payload: object) => b.app.inject({ method: 'POST', url: '/api/admin/users', headers: { cookie, 'x-ftms-request': '1' }, payload });
+    expect((await post(operator, user)).statusCode).toBe(403);
+    expect((await post(admin, user)).statusCode).toBe(201);
+    expect((await post(admin, user)).statusCode).toBe(409);
+    expect((await post(admin, { ...user, username: 'x2', password: 'short' })).statusCode).toBe(422);
+    const res = await b.app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: user.username, password: user.password } });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('issues and revokes device keys; a revoked key is refused', async () => {
+    const admin = await login(b, 'admin');
+    const h = { cookie: admin, 'x-ftms-request': '1' };
+    expect((await b.app.inject({ method: 'POST', url: '/api/admin/devices', headers: h, payload: { device_id: 'sensor-A-UP', kind: 'SENSOR', junction_id: 'A', approach: 'UP' } })).statusCode).toBe(422);
+    const created = await b.app.inject({ method: 'POST', url: '/api/admin/devices', headers: h, payload: { device_id: 'sensor-A-NORTH-2', kind: 'SENSOR', junction_id: 'A', approach: 'NORTH' } });
+    expect(created.statusCode).toBe(201);
+    const key = created.json().key as string;
+    expect((await sensor(key, sensorEvent('NORTH', 'VEHICLE_ARRIVED', 'K-1', 'TRUCK'))).statusCode).toBe(201);
+    expect((await b.app.inject({ method: 'DELETE', url: '/api/admin/devices/sensor-A-NORTH-2', headers: h })).statusCode).toBe(204);
+    expect((await sensor(key, sensorEvent('NORTH', 'VEHICLE_ARRIVED', 'K-2', 'TRUCK'))).statusCode).toBe(401);
+  });
+
+  it('filters history by time and validates the query', async () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const res = await b.app.inject({ method: 'GET', url: `/api/junctions/A/history?from=${encodeURIComponent(future)}`, headers: { cookie: viewer } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+    expect((await b.app.inject({ method: 'GET', url: '/api/junctions/A/history?limit=1000', headers: { cookie: viewer } })).statusCode).toBe(422);
+  });
+
+  it('serves the OpenAPI document', async () => {
+    const res = await b.app.inject({ method: 'GET', url: '/docs/json' });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json().paths)).toContain('/api/junctions/{id}/commands');
+  });
+
+  it('streams status and audit over SSE and replays missed audit entries after Last-Event-ID', async () => {
+    const address = await b.app.listen({ port: 0, host: '127.0.0.1' });
+    const read = async (headers: Record<string, string>, until: (text: string) => boolean) => {
+      const ctrl = new AbortController();
+      const res = await fetch(`${address}/api/stream?junctions=A`, { headers: { cookie: viewer, ...headers }, signal: ctrl.signal });
+      const reader = res.body!.getReader();
+      let text = '';
+      const deadline = Date.now() + 8000;
+      while (!until(text) && Date.now() < deadline) {
+        const chunk = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), 500))]);
+        if (chunk && !chunk.done) text += new TextDecoder().decode(chunk.value);
+      }
+      ctrl.abort();
+      return text;
+    };
+    const live = read({}, (t) => /event: audit/.test(t));
+    await new Promise((r) => setTimeout(r, 300));
+    await sensor(db.keys.SOUTH!, sensorEvent('SOUTH', 'VEHICLE_ARRIVED', 'SSE-1', 'FORKLIFT'));
+    const first = await live;
+    expect(first).toContain('event: status');
+    const id = /id: (A:\d+)/.exec(first)![1]!;
+
+    // Changes made while disconnected are replayed from the audit log.
+    await sensor(db.keys.SOUTH!, sensorEvent('SOUTH', 'VEHICLE_ARRIVED', 'SSE-2', 'FORKLIFT'));
+    const replay = await read({ 'last-event-id': id }, (t) => t.includes('SSE-2'));
+    expect(replay).toContain('SSE-2');
+    expect(replay).not.toContain('"vehicleId":"SSE-1"');
+  });
+});
+
 describe('restart recovery', () => {
   it('a restart with a command pending abandons it, raises the epoch and restores a known state through SAFE_STOP', async () => {
     await waitFor(status, (s) => s.interval.kind === 'GREEN' && !s.pending_command);

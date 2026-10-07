@@ -70,3 +70,26 @@ export const simSensorSchema = z.object({
   timestamp: iso.optional(),
   timestamp_offset_s: z.number().int().min(-3600).max(3600).optional(),
 }).strict();
+
+export const createUserSchema = z.object({
+  username: z.string().regex(/^[a-z0-9._-]{3,64}$/),
+  password: z.string().min(12).max(256),
+  role: z.enum(['VIEWER', 'OPERATOR', 'ADMIN']),
+  simulation_allowed: z.boolean().default(false),
+}).strict();
+
+export const createDeviceSchema = z.object({
+  device_id: id64,
+  kind: z.enum(['SENSOR', 'CONTROLLER']),
+  junction_id: z.string().min(1).max(16),
+  approach: z.string().min(1).max(32).optional(),
+}).strict().refine((d) => (d.kind === 'SENSOR') === (d.approach !== undefined), { message: 'a SENSOR needs an approach; a CONTROLLER has none', path: ['approach'] });
+
+export const historyQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  before: z.coerce.number().int().positive().optional(),
+  type: z.string().regex(/^[A-Z_]{1,64}$/).optional(),
+  direction: z.string().max(32).optional(),
+  from: iso.optional(),
+  to: iso.optional(),
+});

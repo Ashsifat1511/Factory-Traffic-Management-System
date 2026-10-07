@@ -148,16 +148,31 @@ export class Store implements JunctionStore {
     );
   }
 
-  async history(junctionId: string, opts: { limit: number; before?: number; type?: string; direction?: string }) {
+  async history(junctionId: string, opts: { limit: number; before?: number; type?: string; direction?: string; from?: Date; to?: Date }) {
     const params: unknown[] = [junctionId, opts.limit];
     let where = 'chain_id = $1';
     if (opts.before) { params.push(opts.before); where += ` AND chain_seq < $${params.length}`; }
     if (opts.type) { params.push(opts.type); where += ` AND event_type = $${params.length}`; }
     if (opts.direction) { params.push(opts.direction); where += ` AND direction = $${params.length}`; }
+    if (opts.from) { params.push(opts.from); where += ` AND occurred_at >= $${params.length}`; }
+    if (opts.to) { params.push(opts.to); where += ` AND occurred_at < $${params.length}`; }
     const { rows } = await this.pool.query(
       `SELECT audit_id, chain_seq, occurred_at, event_type, severity, actor_type, actor_id, correlation_id, direction, previous_state, new_state, details
        FROM audit_log WHERE ${where} ORDER BY chain_seq DESC LIMIT $2`, params);
     return rows;
+  }
+
+  /** Audit entries after a chain position, oldest first: feeds SSE and `Last-Event-ID` replay (plan §12.4). */
+  async auditAfter(chainId: string, afterSeq: number, limit = 500) {
+    const { rows } = await this.pool.query(
+      `SELECT chain_seq, occurred_at, event_type, severity, actor_type, actor_id, correlation_id, direction, previous_state, new_state, details
+       FROM audit_log WHERE chain_id = $1 AND chain_seq > $2 ORDER BY chain_seq LIMIT $3`, [chainId, afterSeq, limit]);
+    return rows.map((r) => ({ ...r, chain_seq: Number(r.chain_seq) }));
+  }
+
+  async lastSeq(chainId: string): Promise<number> {
+    const { rows } = await this.pool.query('SELECT last_seq FROM audit_chain_heads WHERE chain_id = $1', [chainId]);
+    return Number(rows[0]?.last_seq ?? 0);
   }
 
   /** Recomputes a hash chain; returns the first broken chain_seq or null when intact. */

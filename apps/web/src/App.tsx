@@ -55,9 +55,9 @@ function useLive() {
         setConnected(true);
       });
       es.addEventListener('audit', (ev) => {
-        const d = JSON.parse((ev as MessageEvent).data) as { junction_id: string; entries: never[] };
-        const at = new Date().toISOString();
-        setFeed((prev) => [...d.entries.map((entry) => ({ junction_id: d.junction_id, entry, at })).reverse(), ...prev].slice(0, 200));
+        const d = JSON.parse((ev as MessageEvent).data) as { junction_id: string; entries: { at?: string; type: string; severity: string }[] };
+        const now = new Date().toISOString();
+        setFeed((prev) => [...d.entries.map((entry) => ({ junction_id: d.junction_id, entry, at: entry.at ?? now })).reverse(), ...prev].slice(0, 200));
       });
       es.onerror = () => {
         setConnected(false);
