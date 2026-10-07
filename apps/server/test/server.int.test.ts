@@ -197,6 +197,15 @@ describe('admin, history, docs and live updates', () => {
     expect((await b.app.inject({ method: 'GET', url: '/api/junctions/A/history?limit=1000', headers: { cookie: viewer } })).statusCode).toBe(422);
   });
 
+  it('explains the current state from the audit chain', async () => {
+    const res = await b.app.inject({ method: 'GET', url: '/api/junctions/A/explain', headers: { cookie: viewer } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.chain.request.event_type).toBe('SIGNAL_STATE_REQUESTED');
+    expect(body.chain.confirmation.correlation_id).toBe(body.chain.request.correlation_id);
+    expect(body.why.some((w: string) => w.startsWith('Current signals come from'))).toBe(true);
+  });
+
   it('serves the OpenAPI document', async () => {
     const res = await b.app.inject({ method: 'GET', url: '/docs/json' });
     expect(res.statusCode).toBe(200);

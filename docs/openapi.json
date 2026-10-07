@@ -844,6 +844,62 @@
         }
       }
     },
+    "/api/junctions/{id}/explain": {
+      "get": {
+        "tags": [
+          "junctions"
+        ],
+        "summary": "Why the junction is in its current state: last confirmed command, the decision that requested it and its trigger",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "A"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Explanation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown junction or route",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/junctions/{id}/alerts": {
       "get": {
         "tags": [

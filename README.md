@@ -48,7 +48,11 @@ Demo users (from `.env`): `operator` / `operator-password-123` (can control and 
 | `npm run test:integration` | Server integration tests on a throwaway PostgreSQL (Testcontainers; needs Docker) |
 | `npx vitest run packages/domain/test/domain.test.ts -t "preempts"` | Run a single test |
 | `npm run scenario -- <1..9 or all>` | Demonstrate the spec §15 scenarios against the running stack |
+| `npm run traffic -- [per minute] [truck share]` | Background traffic: random arrivals, and clearances on green approaches |
 | `npm run postman` | Regenerate the Postman collection and environment in `docs/` |
+| `npm run openapi:export -w @ftms/server` | Write `docs/openapi.json` (Swagger UI is served at http://localhost:8080/docs) |
+| `FTMS_NEW_PASSWORD=... npm run create-user -w @ftms/server -- <name> <ROLE> [--simulation]` | Create or update an operator account |
+| `npm run create-device-key -w @ftms/server -- <device_id> <SENSOR\|CONTROLLER> <junction> [approach]` | Issue or rotate a device key (printed once) |
 | `npm run lint` | oxlint (with the domain purity bans) and the architecture rules (dependency-cruiser) |
 | `npm run typecheck` | Typecheck every package |
 | `npm run audit:verify -w @ftms/server` | Recompute the audit hash chains and report tampering |
@@ -130,11 +134,14 @@ All paths from the spec are kept. Errors are RFC 9457 problem details with a sta
 | GET | `/api/junctions`, `/api/junctions/:id`, `/api/junctions/:id/status` | VIEWER | status is a superset of spec §10.3 (desired vs actual, pending command, alerts, `allowed_commands`) |
 | POST | `/api/junctions` | ADMIN | create a junction from a validated config (snake_case, like `config/junctions/A.json`) |
 | POST | `/api/junctions/:id/commands` | OPERATOR | `MANUAL_GREEN_REQUEST`, `RETURN_TO_AUTOMATIC`, `EXTEND_MANUAL`, `ALL_RED_HOLD`, `RELEASE_HOLD`, `EMERGENCY_PREEMPT`, `EMERGENCY_CANCEL`, `RESUME_AFTER_FAULT`; optional `expected_version` (409 if stale) and `Idempotency-Key` header. 202 on acceptance. |
-| GET | `/api/junctions/:id/history?limit&before&type&direction`, `/api/junctions/:id/alerts` | VIEWER | audit log, newest first |
-| GET | `/api/stream` | VIEWER | Server-Sent Events: `status` and `audit` |
+| GET | `/api/junctions/:id/history?limit&before&type&direction&from&to`, `/api/junctions/:id/alerts` | VIEWER | audit log, newest first |
+| GET | `/api/junctions/:id/explain` | VIEWER | why the junction is in its current state: the last confirmed command, the decision that requested it (rule, scores) and its trigger; also the "Why this state?" button on the dashboard |
+| GET | `/api/stream` | VIEWER | Server-Sent Events: `status` (bursts merged to 5/s) and `audit` with `id: <junction>:<seq>`; a reconnect with `Last-Event-ID` replays missed audit entries. At most 5 streams per session and 200 in total |
 | POST | `/api/sensor-events` | sensor device key | 201 first time, 200 `duplicate:true` for an identical repeat, 409 if the same `event_id` has a different payload, 403 if the device is not bound to that junction/direction, 422 invalid |
 | POST | `/api/controller-events` | controller device key | ACK / NACK / FAILED / HEARTBEAT / DEVICE_STATUS (type inferred if omitted; the spec's `actual_state` ACK shorthand is accepted) |
+| POST | `/api/admin/users` | ADMIN | create a user (409 if it exists) |
 | POST | `/api/admin/devices`, DELETE `/api/admin/devices/:id` | ADMIN | issue (shown once) and revoke device keys |
+| GET | `/docs` | public in development, ADMIN in production | Swagger UI generated from the zod contracts |
 | * | `/api/sim/*` | OPERATOR with simulation permission | only registered when `SIMULATION_MODE=true` |
 | GET | `/api/health/live`, `/api/health/ready` | public | readiness is false until recovery has run (and, with MQTT, while the broker is disconnected) |
 
@@ -189,11 +196,12 @@ running against the physical controller model, and assert after every physical c
 permissive together, clearance and yellow durations were respected, the guard never tripped, queues stayed consistent, and processing
 is deterministic. Domain coverage is 99.8 % of lines and 95.6 % of branches (`npm run test:coverage` fails below 90 %).
 
-`npm run test:integration` runs 20 tests against a real PostgreSQL in a container: the authentication and authorization matrix (401,
+`npm run test:integration` runs 26 tests against a real PostgreSQL in a container: the authentication and authorization matrix (401,
 viewer 403, CSRF, device binding, controller key on the sensor route), sensor de-duplication (201/200/409), validation (422),
 unknown-command ACKs, stale versions, strict command schemas, emergency vs manual, `Idempotency-Key` replay, the database guarantees
 (the app role cannot UPDATE or DELETE `audit_log`, one PENDING command per junction, tamper detection by the hash chain), restart
-recovery with a command pending (ABANDONED, higher epoch, SAFE_STOP first), and simulation routes returning 404 when disabled.
+recovery with a command pending (ABANDONED, higher epoch, SAFE_STOP first), simulation routes returning 404 when disabled, admin user and device-key management (a revoked key gets 401), history filters,
+the explain endpoint, the OpenAPI document, and SSE streaming with `Last-Event-ID` replay over a real socket.
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, the coverage gate, the web build, `npm audit --audit-level=high`, the
 integration tests and the container image builds.
@@ -294,7 +302,8 @@ Requirement issues and the decision taken for each (from plan §21):
 - Contracts live in `apps/server/src/contracts` rather than a separate `packages/contracts`; the dashboard keeps its own small typed
   client. ESLint was replaced by oxlint because typescript-eslint does not support TypeScript 7 yet.
 - The containers run the TypeScript sources with tsx instead of a compiled build; seeding runs on the host (it writes `.sim-keys.env`).
-- No OpenAPI/Swagger UI yet, and the dashboard has no causal "explain" view (plan §11.4 stretch goal).
+- The explain endpoint links a decision's entries by their shared transaction timestamp and actor, not by a stored `causation_id`
+  (plan §11.4); this is exact for decisions but cannot follow chains across several decisions.
 - Production roadmap (plan §19): device certificates and signed commands, active/passive HA with fencing, metrics and alerting,
   IEC 62443 network zoning, SSO with MFA, analytics.
 

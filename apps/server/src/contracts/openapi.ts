@@ -45,6 +45,7 @@ export function openApiDocument(opts: { simulationMode: boolean }) {
         responses: { 200: json('Audit entries'), ...errors(401, 404, 422) },
       },
     },
+    '/api/junctions/{id}/explain': { get: { tags: ['junctions'], summary: 'Why the junction is in its current state: last confirmed command, the decision that requested it and its trigger', security: session, parameters: [junctionId], responses: { 200: json('Explanation'), ...errors(401, 404) } } },
     '/api/junctions/{id}/alerts': { get: { tags: ['junctions'], summary: 'Active alerts', security: session, parameters: [junctionId], responses: { 200: json('Alerts'), ...errors(401, 404) } } },
     '/api/stream': { get: { tags: ['junctions'], summary: 'Server-Sent Events: status, audit (id <junction>:<seq>, replayed after Last-Event-ID)', security: session, responses: { 200: { description: 'text/event-stream' }, ...errors(401, 429) } } },
     '/api/sensor-events': { post: { tags: ['devices'], summary: 'Vehicle event from a sensor (201 new, 200 duplicate, 409 event_id reused)', security: device, requestBody: body(sensorEventSchema), responses: { 200: json('Duplicate'), 201: json('Recorded'), ...errors(401, 403, 409, 422, 429, 503) } } },

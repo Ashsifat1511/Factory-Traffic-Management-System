@@ -180,6 +180,25 @@ export async function buildApp(deps: HttpDeps) {
       ...(q.direction ? { direction: q.direction } : {}), ...(q.from ? { from: new Date(q.from) } : {}), ...(q.to ? { to: new Date(q.to) } : {}),
     });
   });
+  app.get<{ Params: { id: string } }>('/api/junctions/:id/explain', { preHandler: requireUser('VIEWER') }, async (req) => {
+    const status = runtime.status(req.params.id);
+    const chain = await store.explain(req.params.id);
+    const why: string[] = [];
+    if (!status.actual_known) why.push('The physical signal state is not confirmed yet, so the backend only allows SAFE_STOP (all red) until the controller confirms it.');
+    if (chain.request) {
+      const d = chain.request.details as { step?: string; phase?: string; cause?: string };
+      why.push(`Current signals come from ${d.step}${d.phase ? ` ${d.phase}` : ''}, requested at ${new Date(chain.request.occurred_at).toISOString()} (cause ${d.cause}), confirmed by ${chain.confirmation!.event_type} at ${new Date(chain.confirmation!.occurred_at).toISOString()}.`);
+      const decision = chain.decision.find((e) => e.event_type === 'PHASE_DECISION');
+      if (decision) why.push(`Decision rule: ${(decision.details as { rule: string }).rule}.`);
+      const trigger = chain.decision.find((e) => !['PHASE_DECISION', 'SIGNAL_TRANSITION_STARTED', 'SIGNAL_STATE_REQUESTED'].includes(e.event_type));
+      why.push(trigger ? `Triggered by ${trigger.event_type}${trigger.direction ? ` on ${trigger.direction}` : ''} from ${trigger.actor_id ?? trigger.actor_type}.` : 'Triggered by a scheduler timer (min/max green, block boundary, yellow or all-red elapsed).');
+    }
+    if (status.emergencies.length) why.push(`Emergency overlay active: ${status.emergencies.map((e: { vehicle_id: string; direction: string }) => `${e.vehicle_id} from ${e.direction}`).join(', ')}.`);
+    if (status.manual) why.push('Manual override active.');
+    if (status.hold) why.push('All-red hold active.');
+    if (status.faults.length) why.push(`Faults: ${status.faults.map((f: { code: string }) => f.code).join(', ')}.`);
+    return { junction_id: req.params.id, mode: status.mode, phase: status.phase, actual_signals: status.actual_signals, why, chain };
+  });
   app.get<{ Params: { id: string } }>('/api/junctions/:id/alerts', { preHandler: requireUser('VIEWER') }, async (req) => runtime.status(req.params.id).alerts);
 
   // ---- operator commands

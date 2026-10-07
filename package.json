@@ -19,7 +19,8 @@
     "mqtt:users": "tsx scripts/mqtt-setup.ts users",
     "lint": "oxlint --deny-warnings && npm run lint:arch",
     "lint:arch": "depcruise packages apps/server/src apps/controller-sim/src apps/web/src --config .dependency-cruiser.cjs",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "traffic": "tsx scripts/traffic.ts"
   },
   "devDependencies": {
     "@swc/core": "^1.16.13",

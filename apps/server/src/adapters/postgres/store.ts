@@ -170,6 +170,27 @@ export class Store implements JunctionStore {
     return rows.map((r) => ({ ...r, chain_seq: Number(r.chain_seq) }));
   }
 
+  /**
+   * Causal chain of the current signals (plan §11.4, stretch): the last confirmed command, the decision that requested it
+   * (every entry of one decision is written in one transaction with one timestamp and actor) and what triggered it.
+   */
+  async explain(junctionId: string) {
+    const cols = 'chain_seq, occurred_at, event_type, severity, actor_type, actor_id, correlation_id, direction, details';
+    const q = async (sql: string, params: unknown[]) => (await this.pool.query(sql, params)).rows.map((r) => ({ ...r, chain_seq: Number(r.chain_seq) }));
+    const [confirmed] = await q(
+      `SELECT ${cols} FROM audit_log WHERE chain_id = $1 AND event_type IN ('CONTROLLER_ACK','CONFIRMED_BY_HEARTBEAT')
+       AND correlation_id IS NOT NULL ORDER BY chain_seq DESC LIMIT 1`, [junctionId]);
+    if (!confirmed) return { confirmation: null, request: null, decision: [] };
+    const [request] = await q(
+      `SELECT ${cols} FROM audit_log WHERE chain_id = $1 AND event_type = 'SIGNAL_STATE_REQUESTED' AND correlation_id = $2 LIMIT 1`,
+      [junctionId, confirmed.correlation_id]);
+    const decision = request ? await q(
+      `SELECT ${cols} FROM audit_log WHERE chain_id = $1 AND occurred_at = $2 AND actor_type = $3 AND actor_id IS NOT DISTINCT FROM $4
+       AND chain_seq <= $5 ORDER BY chain_seq`,
+      [junctionId, request.occurred_at, request.actor_type, request.actor_id, request.chain_seq]) : [];
+    return { confirmation: confirmed, request: request ?? null, decision };
+  }
+
   async lastSeq(chainId: string): Promise<number> {
     const { rows } = await this.pool.query('SELECT last_seq FROM audit_chain_heads WHERE chain_id = $1', [chainId]);
     return Number(rows[0]?.last_seq ?? 0);

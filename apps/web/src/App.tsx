@@ -199,6 +199,7 @@ function JunctionDetail({ status: s, me, now, feed }: { status: Status; me: Me; 
           {s.alerts.length === 0 && <li className="muted">No active alerts.</li>}
           {s.alerts.map((a, i) => <li key={i} className={`sev-${a.severity}`}>{a.severity}: {a.message}</li>)}
         </ul>
+        <WhyPanel junctionId={s.junction_id} version={s.version} />
       </section>
 
       {canOperate && (
@@ -238,5 +239,20 @@ function JunctionDetail({ status: s, me, now, feed }: { status: Status; me: Me; 
         </table>
       </section>
     </main>
+  );
+}
+
+/** "Why is the junction in this state?" from GET /explain (causal chain in the audit log). */
+function WhyPanel({ junctionId, version }: { junctionId: string; version: number }) {
+  const [why, setWhy] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => api<{ why: string[] }>(`/api/junctions/${junctionId}/explain`).then((r) => { setWhy(r.why); setError(null); }).catch((e) => setError((e as Error).message));
+  useEffect(() => { if (why) void load(); }, [version]); // refresh while open
+  return (
+    <div className="why">
+      <button type="button" onClick={() => (why ? setWhy(null) : void load())}>{why ? 'Hide explanation' : 'Why this state?'}</button>
+      {error && <p className="warn">{error}</p>}
+      {why && <ul>{why.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+    </div>
   );
 }
