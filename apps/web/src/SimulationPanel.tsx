@@ -43,7 +43,7 @@ export function SimulationPanel({ junctionId, status }: { junctionId: string; st
   };
   const sendRaw = async () => {
     try { const body = JSON.parse(raw); const r = await api<{ outcome: string }>('/api/sim/controller-events', { method: 'POST', body }); note(`controller event: ${r.outcome}`); }
-    catch (e) { e instanceof SyntaxError ? note('raw event is not valid JSON') : fail(e); }
+    catch (e) { if (e instanceof SyntaxError) note('raw event is not valid JSON'); else fail(e); }
   };
   const queued = Object.values(status.queue_details).length ? Object.entries(status.queue_details).flatMap(([d, q]) => (q.count ? [d] : [])) : [];
 

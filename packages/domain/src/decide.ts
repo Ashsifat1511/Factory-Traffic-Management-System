@@ -670,6 +670,7 @@ function housekeeping(r: Run) {
     } else r.wake(d.manual.leaseExpiresAt);
   }
   // Emergency expiry.
+  // oxlint-disable-next-line unicorn/no-useless-spread -- endEmergency removes entries while we iterate
   for (const e of [...d.emergencies]) {
     if (now >= e.expiresAt) endEmergency(r, e, 'EMERGENCY_TIMEOUT');
     else r.wake(e.expiresAt);

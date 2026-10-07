@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "import", "unicorn"],
+  "categories": { "correctness": "error" },
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "docs/**"],
+  "rules": {
+    "no-unused-vars": "error",
+    "eqeqeq": ["error", "always", { "null": "ignore" }]
+  },
+  "overrides": [
+    {
+      "files": ["packages/domain/src/**", "packages/sim-core/src/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["node:*", "fs", "path", "crypto", "fastify", "pg", "mqtt", "zod", "react"], "message": "Domain code is pure: no I/O or libraries (plan §2.3)." }] }],
+        "no-restricted-globals": ["error",
+          { "name": "Date", "message": "Time comes from ctx.now (plan §2.3)." },
+          { "name": "setTimeout", "message": "Timers are effects (SCHEDULE_WAKE)." },
+          { "name": "setInterval", "message": "Timers are effects (SCHEDULE_WAKE)." },
+          { "name": "process", "message": "No environment access in the domain." }
+        ],
+        "no-restricted-properties": ["error", { "object": "Math", "property": "random", "message": "Ids come from ctx.newId; no randomness in the domain." }]
+      }
+    },
+    {
+      "files": ["apps/server/src/application/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["fastify", "@fastify/*", "pg", "mqtt", "**/adapters/**"], "message": "The application layer depends on ports, not adapters (plan §2.3)." }] }]
+      }
+    }
+  ]
+}

@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -p packages/domain --noEmit && tsc -p packages/sim-core --noEmit && tsc -p apps/server --noEmit && tsc -p apps/controller-sim --noEmit && tsc -p apps/web --noEmit",
     "dev": "npm run dev -w apps/server",
     "scenario": "tsx scripts/scenarios.ts",
     "postman": "tsx scripts/postman.ts",
@@ -16,11 +16,15 @@
     "db:seed": "npm run seed -w @ftms/server",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "certs:dev": "tsx scripts/mqtt-setup.ts certs",
-    "mqtt:users": "tsx scripts/mqtt-setup.ts users"
+    "mqtt:users": "tsx scripts/mqtt-setup.ts users",
+    "lint": "oxlint --deny-warnings && npm run lint:arch",
+    "lint:arch": "depcruise packages apps/server/src apps/controller-sim/src apps/web/src --config .dependency-cruiser.cjs",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@swc/core": "^1.16.13",
     "@types/node": "^26.6.4",
+    "@vitest/coverage-v8": "^5.0.3",
     "dependency-cruiser": "^18.5.0",
     "fast-check": "^4.10.2",
     "oxlint": "^1.87.0",

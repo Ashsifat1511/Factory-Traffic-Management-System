@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { A_JSON, Harness, loadA, runningJunction, types } from './harness.js';
+import { A_JSON, loadA, runningJunction, types } from './harness.js';
 import {
   assertSafeCommand, configFromJson, health, specMode, UnsafeCommand, validateConfig, scorePhases, initialState,
 } from '../src/index.js';

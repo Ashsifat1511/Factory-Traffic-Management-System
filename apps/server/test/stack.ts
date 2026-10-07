@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { configFromJson } from '@ftms/domain';
 import { ControllerModel, type AckReply, type ControllerCommand } from '@ftms/sim-core';
 import { buildApp } from '../src/adapters/http/app.js';

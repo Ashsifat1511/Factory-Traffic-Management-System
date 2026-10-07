@@ -183,7 +183,7 @@ export async function buildApp(deps: HttpDeps) {
       ...(typeof key === 'string' ? { idempotencyKey: key.slice(0, 100) } : {}),
     });
     if (!out.ok) return reject(reply, out.code, out.detail);
-    return reply.status(202).send({ request_id: out.request_id, status: 'ACCEPTED', junction_version: out.junction_version, ...(out.data ?? {}) });
+    return reply.status(202).send({ request_id: out.request_id, status: 'ACCEPTED', junction_version: out.junction_version, ...out.data });
   });
 
   // ---- device ingestion
