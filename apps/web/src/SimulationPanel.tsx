@@ -29,7 +29,7 @@ export function SimulationPanel({ junctionId, status }: { junctionId: string; st
       junction_id: junctionId, direction: dir, event_type: eventType, vehicle_id: vehicle,
       ...(eventType === 'VEHICLE_ARRIVED' ? { vehicle_type: type } : {}),
       event_id: eventId || `sim-${crypto.randomUUID()}`,
-      ...(seq ? { sequence_no: Number(seq) } : {}), timestamp_offset_s: Number(offset) || 0,
+      ...(seq ? { sequence_no: Number(seq) } : {}), timestamp: new Date(Date.now() + (Number(offset) || 0) * 1000).toISOString(),
     };
     for (let i = 0; i < times; i++) {
       try {
