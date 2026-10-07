@@ -21,35 +21,59 @@ npm start -w @ftms/controller-sim       # controller simulator on :8090 (separat
 npm run dev -w @ftms/web                # dashboard on http://127.0.0.1:3000
 ```
 
+**Full stack in containers** (server, simulator and dashboard behind nginx on http://localhost:8088), after the seed step above:
+
+```bash
+docker compose --profile app up -d --build
+```
+
+**MQTT transport** (TLS on 8883, per-device users and ACLs, plan §13):
+
+```bash
+npm run certs:dev                        # dev CA + broker certificate (OpenSSL runs in a container)
+npm run mqtt:users                       # broker users, passwords and ACLs from the device registry -> .mqtt-creds.env
+docker compose --profile mqtt up -d mosquitto
+CONTROLLER_TRANSPORT=mqtt npm start -w @ftms/controller-sim
+CONTROLLER_TRANSPORT=mqtt npm start -w @ftms/server
+npx tsx scripts/mqtt-check.ts            # ACL denial, topic binding and command expiry checks
+```
+
 Demo users (from `.env`): `operator` / `operator-password-123` (can control and simulate), `admin` / `admin-password-123`,
 `viewer` / `viewer-password-123` (read-only).
 
 | Command | What it does |
 |---|---|
-| `npm test` | Domain unit, scenario and property-based tests (Vitest + fast-check) |
+| `npm test` | Domain unit, rule, scenario and property-based tests (Vitest + fast-check) |
+| `npm run test:coverage` | The same with the domain coverage gate (>= 90 % lines and branches) |
+| `npm run test:integration` | Server integration tests on a throwaway PostgreSQL (Testcontainers; needs Docker) |
 | `npx vitest run packages/domain/test/domain.test.ts -t "preempts"` | Run a single test |
-| `npx tsx scripts/scenarios.ts <1..9 or all>` | Demonstrate the spec §15 scenarios against the running stack |
+| `npm run scenario -- <1..9 or all>` | Demonstrate the spec §15 scenarios against the running stack |
+| `npm run postman` | Regenerate the Postman collection and environment in `docs/` |
+| `npm run lint` | oxlint (with the domain purity bans) and the architecture rules (dependency-cruiser) |
+| `npm run typecheck` | Typecheck every package |
 | `npm run audit:verify -w @ftms/server` | Recompute the audit hash chains and report tampering |
-| `npx tsc -p packages/domain --noEmit` | Typecheck (also `apps/server`, `apps/controller-sim`, `apps/web`) |
 
 ## Architecture
 
 A modular monolith with ports and adapters (plan §2):
 
 ```
-REST / (MQTT)  →  HTTP adapter (Fastify)  →  Application: one actor (mailbox) per junction  →  Domain decide()  (pure)
+REST / MQTT    →  HTTP / MQTT adapters   →  Application: one actor (mailbox) per junction  →  Domain decide()  (pure)
                                                   │                                              │
                                                   ├── PostgreSQL store (snapshot + hash-chained audit, one transaction per decision)
-                                                  └── ControllerGateway port → REST controller simulator (MQTT adapter is roadmap M6)
+                                                  └── ControllerGateway port → REST or MQTT (CONTROLLER_TRANSPORT) → controller simulator
 ```
 
 | Path | Role |
 |---|---|
 | `packages/domain` | The traffic engine. No dependencies, no I/O, no clock: `decide(ctx, state, input)` returns the new state, effects, audit records and an outcome. Contains config validation, the independent safety guard, the scheduler and the state machine. |
 | `packages/sim-core` | Physical controller model with its own conflict monitor and local SAFE_STOP clearance. Used by the simulator and by the property tests as "the physical world". |
-| `apps/server` | Application layer (actors, runtime, status view) and adapters (HTTP, PostgreSQL, security, REST controller gateway). |
-| `apps/controller-sim` | Controller simulator process with fault switches (drop ACKs, NACK, wrong state, offline, unsafe heartbeat, device status). |
+| `apps/server` | `application/` (actors, runtime, status view, ports), `contracts/` (zod schemas and wire mappers shared by HTTP and MQTT), `adapters/` (HTTP, PostgreSQL, security, REST and MQTT controller transports). |
+| `apps/controller-sim` | Controller simulator process with fault switches (drop ACKs, NACK, wrong state, offline, unsafe heartbeat, device status), over REST or MQTT. |
 | `apps/web` | React dashboard: live view over SSE, intersection diagram (desired vs confirmed), controls, simulation panel, activity feed. |
+
+The layer rules of plan §2.3 are enforced by `npm run lint`: the domain may not import anything (and may not use `Date`, timers or
+`Math.random`), the application may not import adapters, `pg`, Fastify or MQTT, and adapters may not depend on each other at runtime.
 
 Why not microservices: each junction is a single-writer safety state machine. Splitting "decide" from "command" across services
 would add dual writes and ordering hazards that threaten the invariants, and the load (about one decision per second per junction)
@@ -112,11 +136,21 @@ All paths from the spec are kept. Errors are RFC 9457 problem details with a sta
 | POST | `/api/controller-events` | controller device key | ACK / NACK / FAILED / HEARTBEAT / DEVICE_STATUS (type inferred if omitted; the spec's `actual_state` ACK shorthand is accepted) |
 | POST | `/api/admin/devices`, DELETE `/api/admin/devices/:id` | ADMIN | issue (shown once) and revoke device keys |
 | * | `/api/sim/*` | OPERATOR with simulation permission | only registered when `SIMULATION_MODE=true` |
-| GET | `/api/health/live`, `/api/health/ready` | public | readiness is false until recovery has run |
+| GET | `/api/health/live`, `/api/health/ready` | public | readiness is false until recovery has run (and, with MQTT, while the broker is disconnected) |
 
 State-changing operator requests must send `x-ftms-request: 1` (CSRF protection). Devices authenticate with
 `Authorization: Bearer <key>` (keys for the demo are in `.sim-keys.env`). The controller contract (commands with `seq`, `epoch`,
 `expires_at`; ACKs with full aspects) is in plan §8.2.
+
+**Postman:** import `docs/ftms.postman_collection.json` and `docs/ftms.postman_environment.json`, paste the device keys from
+`.sim-keys.env` into the environment, and run "00 Setup" first. There is one folder per spec §15 scenario; every request has a
+status-code test, and the whole collection runs green with `npx newman run docs/ftms.postman_collection.json -e <env>`.
+
+**MQTT topics** (`CONTROLLER_TRANSPORT=mqtt`, plan §13): `ftms/v1/junctions/{id}/controller/{commands|acks|heartbeat|status}`,
+`ftms/v1/junctions/{id}/devices/status`, `ftms/v1/junctions/{id}/sensors/{approach}/events` and the retained
+`ftms/v1/backend/status`. Payloads are the same JSON as the REST bodies and are validated the same way; a payload whose junction or
+direction does not match its topic is dead-lettered. Commands are QoS 1, never retained, and carry an MQTT 5 message expiry; clients
+use clean sessions, so nothing is replayed after a reconnect. The controller's last will (`OFFLINE`) marks it offline at once.
 
 ## Database schema
 
@@ -145,12 +179,24 @@ Start the stack (Quick start), open the dashboard as `operator`, then either use
 
 ## Tests
 
-`npm test` runs 29 tests: config validation, the safety guard, the state machine scenarios (startup, restart mid-transition,
-gap-out, emergency, manual, stale versions, missing ACKs, offline/reconnect, wrong state + operator resume, concurrency) and
+`npm test` runs 78 domain tests: config validation (V-1..V-8), the safety guard, rule tests for controller messages (shorthand, NACK,
+unsafe report, duplicate/late ACKs, heartbeat mismatch), device status, sensor streams (sequence resets and gaps, clock skew,
+capacity, moved vehicles), emergencies (refresh, stale, cooldown, limit, rotation, timeout), operator commands and leases, the
+scheduler (rest, starvation, max green), the state machine scenarios (startup, restart mid-transition, gap-out, emergency, manual,
+stale versions, missing ACKs, offline/reconnect, wrong state + operator resume, concurrency) and
 **property-based tests** that throw hundreds of random sequences of events, commands, controller faults and time jumps at the domain
 running against the physical controller model, and assert after every physical change that conflicting directions were never
 permissive together, clearance and yellow durations were respected, the guard never tripped, queues stayed consistent, and processing
-is deterministic.
+is deterministic. Domain coverage is 99.8 % of lines and 95.6 % of branches (`npm run test:coverage` fails below 90 %).
+
+`npm run test:integration` runs 20 tests against a real PostgreSQL in a container: the authentication and authorization matrix (401,
+viewer 403, CSRF, device binding, controller key on the sensor route), sensor de-duplication (201/200/409), validation (422),
+unknown-command ACKs, stale versions, strict command schemas, emergency vs manual, `Idempotency-Key` replay, the database guarantees
+(the app role cannot UPDATE or DELETE `audit_log`, one PENDING command per junction, tamper detection by the hash chain), restart
+recovery with a command pending (ABANDONED, higher epoch, SAFE_STOP first), and simulation routes returning 404 when disabled.
+
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, the coverage gate, the web build, `npm audit --audit-level=high`, the
+integration tests and the container image builds.
 
 ## Security notes
 
@@ -236,12 +282,19 @@ Requirement issues and the decision taken for each (from plan §21):
 
 ## Known limitations and next steps
 
-- **MQTT (plan M6) is designed but not built yet**: the `ControllerGateway` port, topics, ACLs and payloads are specified in plan §13;
-  only the REST simulator transport exists.
+- MQTT uses per-device passwords over TLS; mutual TLS with per-device certificates and signed command payloads are roadmap P1
+  (plan §13.4). The simulator's fault switches stay on its HTTP admin port in both transports (the `ftms/sim/...` control topic is
+  in the ACL but unused). On Windows bind mounts, Mosquitto 2.0.20 warns that `passwd`/`acl` are world-readable; the image is
+  pinned to a version that only warns.
+- Commands are never queued, so if the backend starts before the controller (or the broker), its first SAFE_STOP times out and the
+  junction shows FAILED until an operator sends `RESUME_AFTER_FAULT`. This is deliberate (no stale commands); start the simulator
+  first for a smooth demo.
 - The junction aggregate is stored as a JSONB snapshot rather than the normalized queue/emergency tables of plan §11.2 (safety
   constraints such as one pending command per junction are still real database constraints).
-- No automated server integration tests yet (Testcontainers), no ESLint/dependency-cruiser rules, no CI workflow, no Dockerfiles for
-  server/simulator/dashboard; the dashboard has no causal "explain" view.
+- Contracts live in `apps/server/src/contracts` rather than a separate `packages/contracts`; the dashboard keeps its own small typed
+  client. ESLint was replaced by oxlint because typescript-eslint does not support TypeScript 7 yet.
+- The containers run the TypeScript sources with tsx instead of a compiled build; seeding runs on the host (it writes `.sim-keys.env`).
+- No OpenAPI/Swagger UI yet, and the dashboard has no causal "explain" view (plan §11.4 stretch goal).
 - Production roadmap (plan §19): device certificates and signed commands, active/passive HA with fencing, metrics and alerting,
   IEC 62443 network zoning, SSO with MFA, analytics.
 
