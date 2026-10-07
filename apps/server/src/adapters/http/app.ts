@@ -3,13 +3,14 @@ import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
-import { configFromJson, type AckMessage, type OperatorCommand } from '@ftms/domain';
+import { configFromJson, type OperatorCommand } from '@ftms/domain';
 import type { ZodError, ZodTypeAny } from 'zod';
 import { JunctionBusy } from '../../application/actor.js';
 import { NotFound, type Runtime } from '../../application/runtime.js';
 import type { Device, Role, Security, SessionUser } from '../postgres/security.js';
 import type { Store } from '../postgres/store.js';
-import { ackSchema, commandSchema, deviceStatusSchema, heartbeatSchema, loginSchema, sensorEventSchema, simSensorSchema } from './schemas.js';
+import { toAck, toDeviceStatus, toHeartbeat, toSensorEvent, type SensorBody } from '../../contracts/ingest.js';
+import { ackSchema, commandSchema, deviceStatusSchema, heartbeatSchema, loginSchema, sensorEventSchema, simSensorSchema } from '../../contracts/schemas.js';
 
 export interface HttpDeps {
   runtime: Runtime;
@@ -19,6 +20,8 @@ export interface HttpDeps {
   dashboardOrigin: string;
   cookieSecure: boolean;
   simulator?: { url: string; token: string };
+  /** Present when CONTROLLER_TRANSPORT=mqtt: readiness includes the broker connection (plan §17). */
+  brokerConnected?: () => boolean;
 }
 
 declare module 'fastify' {
@@ -114,7 +117,11 @@ export async function buildApp(deps: HttpDeps) {
 
   // ---- health
   app.get('/api/health/live', async () => ({ status: 'ok' }));
-  app.get('/api/health/ready', async (_req, reply) => (runtime.ready ? { status: 'ready' } : reply.status(503).send({ status: 'recovering' })));
+  app.get('/api/health/ready', async (_req, reply) => {
+    if (!runtime.ready) return reply.status(503).send({ status: 'recovering' });
+    if (deps.brokerConnected && !deps.brokerConnected()) return reply.status(503).send({ status: 'broker_disconnected' });
+    return { status: 'ready' };
+  });
 
   // ---- auth
   app.post('/api/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -180,16 +187,12 @@ export async function buildApp(deps: HttpDeps) {
   });
 
   // ---- device ingestion
-  const ingestSensor = async (req: FastifyRequest, reply: FastifyReply, body: { event_id: string; junction_id: string; direction: string; event_type: 'VEHICLE_ARRIVED' | 'VEHICLE_CLEARED'; vehicle_id: string; vehicle_type?: string; sequence_no: number; timestamp: string }, sourceId: string, actorType: 'DEVICE' | 'SIMULATOR') => {
+  const ingestSensor = async (req: FastifyRequest, reply: FastifyReply, body: SensorBody, sourceId: string, actorType: 'DEVICE' | 'SIMULATOR') => {
     if (!runtime.actors.has(body.junction_id)) {
       void store.reject({ endpoint: req.url, sourceId, remoteAddr: req.ip, reasonCode: 'UNKNOWN_JUNCTION', payload: body });
       return problem(reply, 422, 'UNKNOWN_JUNCTION', `Junction ${body.junction_id} does not exist`);
     }
-    const out = await runtime.sensorEvent({
-      eventId: body.event_id, junctionId: body.junction_id, direction: body.direction, eventType: body.event_type,
-      vehicleId: body.vehicle_id, ...(body.vehicle_type ? { vehicleType: body.vehicle_type } : {}),
-      sequenceNo: body.sequence_no, timestamp: Date.parse(body.timestamp),
-    }, sourceId, actorType);
+    const out = await runtime.sensorEvent(toSensorEvent(body), sourceId, actorType);
     const queues = runtime.status(body.junction_id).queues;
     if (out.duplicate) return reply.status(200).send({ event_id: body.event_id, duplicate: true, outcome: out.code, queues });
     if (!out.ok) {
@@ -218,7 +221,7 @@ export async function buildApp(deps: HttpDeps) {
       const b = parse(ackSchema, raw, reply, req);
       if (!b) return;
       runtime.actor(b.junction_id);
-      const msg: AckMessage = { type: 'ACK', commandId: b.command_id, status: b.status, ...(b.actual_aspects ? { actualAspects: b.actual_aspects } : {}), ...(b.actual_state ? { actualState: b.actual_state } : {}), ...(b.reason ? { reason: b.reason } : {}) };
+      const msg = toAck(b);
       const out = await runtime.controllerMessage(b.junction_id, msg, sourceId, actorType);
       if (!out.ok) return reject(reply, out.code);
       return { outcome: out.code };
@@ -227,14 +230,14 @@ export async function buildApp(deps: HttpDeps) {
       const b = parse(heartbeatSchema, raw, reply, req);
       if (!b) return;
       runtime.actor(b.junction_id);
-      const out = await runtime.controllerMessage(b.junction_id, { type: 'HEARTBEAT', aspects: b.aspects, lastAppliedCommandId: b.last_applied_command_id ?? null }, sourceId, actorType);
+      const out = await runtime.controllerMessage(b.junction_id, toHeartbeat(b), sourceId, actorType);
       return { outcome: out.code };
     }
     if (type === 'DEVICE_STATUS') {
       const b = parse(deviceStatusSchema, raw, reply, req);
       if (!b) return;
       runtime.actor(b.junction_id);
-      const out = await runtime.deviceStatus({ eventId: b.event_id, junctionId: b.junction_id, deviceType: b.device_type, ...(b.direction ? { direction: b.direction } : {}), status: b.status, timestamp: Date.parse(b.timestamp) }, sourceId, actorType);
+      const out = await runtime.deviceStatus(toDeviceStatus(b), sourceId, actorType);
       if ((out as { duplicate?: boolean }).duplicate) return reply.status(200).send({ event_id: b.event_id, duplicate: true, outcome: out.code });
       if (!out.ok) return reject(reply, out.code, out.detail);
       return reply.status(201).send({ event_id: b.event_id, outcome: out.code });

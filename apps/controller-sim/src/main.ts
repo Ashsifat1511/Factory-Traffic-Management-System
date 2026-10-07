@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import Fastify from 'fastify';
+import mqtt, { type MqttClient } from 'mqtt';
 import { ControllerModel, type AckReply, type ControllerCommand } from '@ftms/sim-core';
 
 function loadDotEnv(path: URL = new URL('../../../.env', import.meta.url)) {
@@ -17,26 +18,42 @@ function loadDotEnv(path: URL = new URL('../../../.env', import.meta.url)) {
  */
 loadDotEnv();
 loadDotEnv(new URL('../../../.sim-keys.env', import.meta.url));
+loadDotEnv(new URL('../../../.mqtt-creds.env', import.meta.url));
+const TRANSPORT = process.env.CONTROLLER_TRANSPORT === 'mqtt' ? 'mqtt' : 'rest';
+const MQTT_URL = process.env.MQTT_URL ?? 'mqtts://localhost:8883';
+const MQTT_CA = process.env.MQTT_CA_FILE ?? 'infra/mosquitto/certs/ca.crt';
 const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8080';
 const TOKEN = process.env.BACKEND_TO_SIM_TOKEN ?? '';
 const PORT = Number(process.env.SIM_PORT ?? 8090);
 const junctionIds = (process.env.SIM_JUNCTIONS ?? 'A').split(',');
 
-interface Sim { model: ControllerModel; key: string; latencyMs: number; lastBackendContact: number; localFailsafe: boolean; log: string[] }
+interface Sim {
+  id: string; model: ControllerModel; key: string; latencyMs: number; lastBackendContact: number; localFailsafe: boolean; log: string[];
+  mqtt?: MqttClient; backendOnline?: boolean;
+}
 const sims = new Map<string, Sim>();
 
 for (const j of junctionIds) {
   const raw = JSON.parse(readFileSync(new URL(`../../../config/junctions/${j}.json`, import.meta.url), 'utf8'));
   const groups = raw.signal_groups.map((g: { id: string }) => g.id);
   sims.set(j, {
-    model: new ControllerModel(j, groups, raw.conflicts, 3000, 1000, Date.now()),
+    id: j, model: new ControllerModel(j, groups, raw.conflicts, 3000, 1000, Date.now()),
     key: process.env[`CONTROLLER_KEY_${j}`] ?? '', latencyMs: 200, lastBackendContact: Date.now(), localFailsafe: false, log: [],
   });
 }
 
 const note = (s: Sim, m: string) => { s.log.unshift(`${new Date().toISOString()} ${m}`); s.log.length = Math.min(s.log.length, 30); };
 
-async function post(s: Sim, body: unknown) {
+const topic = (s: Sim, t: string) => `ftms/v1/junctions/${s.id}/${t}`;
+
+/** Uplink to the backend: REST, or MQTT topics chosen by message type (plan §13.1). */
+async function post(s: Sim, body: { type?: string } & Record<string, unknown>) {
+  if (s.mqtt) {
+    if (!s.mqtt.connected) return note(s, 'broker unreachable');
+    const t = body.type === 'HEARTBEAT' ? 'controller/heartbeat' : body.type === 'DEVICE_STATUS' ? 'devices/status' : 'controller/acks';
+    s.mqtt.publish(topic(s, t), JSON.stringify(body), { qos: t === 'controller/heartbeat' ? 0 : 1 });
+    return;
+  }
   try {
     const res = await fetch(`${BACKEND}/api/controller-events`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${s.key}` },
@@ -57,16 +74,49 @@ const sendAck = (s: Sim, ack: AckReply | null) => {
 
 const app = Fastify({ logger: false });
 
-app.post<{ Body: ControllerCommand & { issued_at: string; expires_at: string } }>('/commands', async (req, reply) => {
+type WireCommand = ControllerCommand & { issued_at: string; expires_at: string };
+function receive(s: Sim, wire: WireCommand) {
+  s.lastBackendContact = Date.now();
+  const cmd: ControllerCommand = { ...wire, issued_at: Date.parse(wire.issued_at), expires_at: Date.parse(wire.expires_at) };
+  note(s, `received ${cmd.type} ${cmd.command_id} seq ${cmd.seq} attempt ${cmd.attempt}`);
+  setTimeout(() => sendAck(s, s.model.handle(cmd, Date.now())), s.latencyMs);
+}
+
+app.post<{ Body: WireCommand }>('/commands', async (req, reply) => {
   if (req.headers['x-backend-token'] !== TOKEN) return reply.status(401).send({ error: 'bad token' });
   const s = sims.get(req.body.junction_id);
   if (!s) return reply.status(404).send({ error: 'unknown junction' });
-  s.lastBackendContact = Date.now();
-  const cmd: ControllerCommand = { ...req.body, issued_at: Date.parse(req.body.issued_at), expires_at: Date.parse(req.body.expires_at) };
-  note(s, `received ${cmd.type} ${cmd.command_id} seq ${cmd.seq} attempt ${cmd.attempt}`);
-  setTimeout(() => sendAck(s, s.model.handle(cmd, Date.now())), s.latencyMs);
+  receive(s, req.body);
   return reply.status(202).send({ accepted: true });
 });
+
+/**
+ * MQTT transport: one connection per controller with its own credentials. Clean start, session expiry 0, retained
+ * ONLINE status with an OFFLINE last will. The backend's retained status feeds the watchdog (C-6).
+ */
+function connectMqtt(s: Sim) {
+  const user = `ctrl-${s.id}`;
+  const password = process.env[`MQTT_PASSWORD_CTRL_${s.id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`];
+  if (!password) throw new Error(`No MQTT password for ${user} (run npm run mqtt:users)`);
+  const statusTopic = topic(s, 'controller/status');
+  const ca = readFileSync(/^([A-Za-z]:)?[\\/]/.test(MQTT_CA) ? MQTT_CA : new URL(`../../../${MQTT_CA}`, import.meta.url));
+  const client = mqtt.connect(MQTT_URL, {
+    protocolVersion: 5, clean: true, properties: { sessionExpiryInterval: 0 }, clientId: `${user}-${process.pid}`,
+    username: user, password, ca, reconnectPeriod: 2000,
+    will: { topic: statusTopic, payload: Buffer.from('OFFLINE'), qos: 1, retain: true },
+  });
+  client.on('connect', () => {
+    note(s, 'connected to broker');
+    client.publish(statusTopic, 'ONLINE', { qos: 1, retain: true });
+    client.subscribe(['ftms/v1/backend/status', topic(s, 'controller/commands')], { qos: 1 });
+  });
+  client.on('message', (t, payload) => {
+    if (t === 'ftms/v1/backend/status') { s.backendOnline = payload.toString() === 'ONLINE'; return; }
+    try { receive(s, JSON.parse(payload.toString())); } catch { note(s, 'malformed command ignored'); }
+  });
+  client.on('error', (e) => note(s, `broker error: ${e.message}`));
+  s.mqtt = client;
+}
 
 app.get<{ Params: { id: string } }>('/junctions/:id', async (req, reply) => {
   if (req.headers['x-backend-token'] !== TOKEN) return reply.status(401).send({ error: 'bad token' });
@@ -81,6 +131,8 @@ app.put<{ Params: { id: string }; Body: { latency_ms?: number; faults?: Partial<
   if (!s) return reply.status(404).send({ error: 'unknown junction' });
   if (typeof req.body.latency_ms === 'number') s.latencyMs = Math.max(0, Math.min(5000, req.body.latency_ms));
   if (req.body.faults) Object.assign(s.model.faults, req.body.faults);
+  if (s.mqtt && req.body.faults?.offline === true) s.mqtt.end(true); // no DISCONNECT: the broker publishes the last will
+  if (s.mqtt && req.body.faults?.offline === false && !s.mqtt.connected) connectMqtt(s);
   if (req.body.device_status) {
     void post(s, { type: 'DEVICE_STATUS', event_id: `sim-status-${Date.now()}`, junction_id: req.params.id, timestamp: new Date().toISOString(), ...req.body.device_status });
   }
@@ -91,6 +143,7 @@ app.put<{ Params: { id: string }; Body: { latency_ms?: number; faults?: Partial<
 // Local timers: SAFE_STOP clearance, heartbeats and the backend watchdog (rule C-6).
 setInterval(() => {
   for (const s of sims.values()) {
+    if (s.mqtt?.connected && s.backendOnline) s.lastBackendContact = Date.now();
     sendAck(s, s.model.tick(Date.now()));
     if (!s.localFailsafe && Date.now() - s.lastBackendContact > 60_000) {
       s.localFailsafe = true;
@@ -111,5 +164,6 @@ setInterval(() => {
   }
 }, 5000);
 
+if (TRANSPORT === 'mqtt') for (const s of sims.values()) connectMqtt(s);
 await app.listen({ port: PORT, host: '0.0.0.0' });
-console.log(`controller simulator for ${junctionIds.join(', ')} on :${PORT}, backend ${BACKEND}`);
+console.log(`controller simulator for ${junctionIds.join(', ')} on :${PORT}, transport ${TRANSPORT}, backend ${TRANSPORT === 'mqtt' ? MQTT_URL : BACKEND}`);

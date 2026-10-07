@@ -2,5 +2,11 @@
   "name": "@ftms/controller-sim",
   "version": "0.1.0",
   "type": "module",
-  "scripts": { "start": "tsx src/main.ts", "dev": "tsx watch src/main.ts" }
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "mqtt": "^5.16.0"
+  }
 }

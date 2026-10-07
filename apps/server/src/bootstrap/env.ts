@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 /** Loads `.env` from the repository root without overriding real environment variables. */
@@ -25,15 +26,25 @@ export const envSchema = z.object({
   CONTROLLER_TRANSPORT: z.enum(['rest', 'mqtt']).default('rest'),
   CONTROLLER_SIM_URL: z.string().default('http://localhost:8090'),
   BACKEND_TO_SIM_TOKEN: z.string().min(8),
+  MQTT_URL: z.string().default('mqtts://localhost:8883'),
+  MQTT_CA_FILE: z.string().default('infra/mosquitto/certs/ca.crt'),
+  MQTT_USERNAME: z.string().default('ftms-backend'),
+  MQTT_PASSWORD_FTMS_BACKEND: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
+export const repoPath = (p: string) => (/^([A-Za-z]:)?[\\/]/.test(p) ? p : fileURLToPath(new URL(`../../../../${p}`, import.meta.url)));
+
 export function readEnv(): Env {
   loadDotEnv();
+  loadDotEnv(new URL('../../../../.mqtt-creds.env', import.meta.url)); // written by `npm run mqtt:users`
   const env = envSchema.parse(process.env);
   if (env.NODE_ENV === 'production' && env.SIMULATION_MODE && !env.ALLOW_SIMULATION_IN_PRODUCTION) {
     throw new Error('Refusing to start: SIMULATION_MODE=true in production (set ALLOW_SIMULATION_IN_PRODUCTION to override)');
+  }
+  if (env.CONTROLLER_TRANSPORT === 'mqtt' && !env.MQTT_PASSWORD_FTMS_BACKEND) {
+    throw new Error('CONTROLLER_TRANSPORT=mqtt needs MQTT_PASSWORD_FTMS_BACKEND (run `npm run mqtt:users`)');
   }
   return env;
 }

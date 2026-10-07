@@ -15,5 +15,13 @@ services:
       interval: 5s
       retries: 10
 
+  # MQTT transport (M6): `docker compose --profile mqtt up -d mosquitto` after `npm run certs:dev` and `npm run mqtt:users`.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    profiles: ["mqtt"]
+    volumes: ["./infra/mosquitto:/mosquitto/config:ro"]
+    ports: ["127.0.0.1:8883:8883"]
+    restart: unless-stopped
+
 volumes:
   db-data: {}

@@ -1,5 +1,5 @@
 import { decide, type CompiledConfig, type Decision, type Input, type JunctionState, type Outcome } from '@ftms/domain';
-import type { CommitMeta } from '../adapters/postgres/store.js';
+import type { CommitMeta } from './ports.js';
 
 export class JunctionBusy extends Error {}
 

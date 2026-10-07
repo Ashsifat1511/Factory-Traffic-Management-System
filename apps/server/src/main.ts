@@ -4,7 +4,8 @@ import { createPool, migrate } from './adapters/postgres/db.js';
 import { Security } from './adapters/postgres/security.js';
 import { Store } from './adapters/postgres/store.js';
 import { Runtime } from './application/runtime.js';
-import { readEnv } from './bootstrap/env.js';
+import { connectBackend, MqttControllerGateway, MqttInboundAdapter } from './adapters/mqtt/mqtt.js';
+import { readEnv, repoPath } from './bootstrap/env.js';
 
 const env = readEnv();
 const ownerPool = createPool(env.DATABASE_OWNER_URL);
@@ -33,19 +34,26 @@ if (!rows[0].ok) {
 
 const store = new Store(pool);
 const security = new Security(pool, env.DEVICE_KEY_PEPPER, store);
-const gateway = new RestControllerGateway(env.CONTROLLER_SIM_URL, env.BACKEND_TO_SIM_TOKEN, (m) => console.warn(m));
+// CONTROLLER_TRANSPORT selects the adapter (plan §13.3); the domain and use cases are identical for both.
+const mqttClient = env.CONTROLLER_TRANSPORT === 'mqtt'
+  ? await connectBackend({ url: env.MQTT_URL, caFile: repoPath(env.MQTT_CA_FILE), username: env.MQTT_USERNAME, password: env.MQTT_PASSWORD_FTMS_BACKEND! }, (m) => console.warn(m))
+  : null;
+const gateway = mqttClient ? new MqttControllerGateway(mqttClient) : new RestControllerGateway(env.CONTROLLER_SIM_URL, env.BACKEND_TO_SIM_TOKEN, (m) => console.warn(m));
 const runtime = new Runtime(store, gateway);
 const app = await buildApp({
   runtime, store, security, simulationMode: env.SIMULATION_MODE, dashboardOrigin: env.DASHBOARD_ORIGIN,
   cookieSecure: env.SESSION_COOKIE_SECURE, simulator: { url: env.CONTROLLER_SIM_URL, token: env.BACKEND_TO_SIM_TOKEN },
+  ...(mqttClient ? { brokerConnected: () => mqttClient.connected } : {}),
 });
-await store.audit('SYSTEM', null, [{ type: 'SYSTEM_STARTED', severity: 'INFO', details: { simulationMode: env.SIMULATION_MODE } }], 'SYSTEM');
+await store.audit('SYSTEM', null, [{ type: 'SYSTEM_STARTED', severity: 'INFO', details: { simulationMode: env.SIMULATION_MODE, transport: env.CONTROLLER_TRANSPORT } }], 'SYSTEM');
 await runtime.start();
+if (mqttClient) await new MqttInboundAdapter(mqttClient, runtime, store, (m) => console.warn(m)).start();
 setInterval(() => void store.purge().catch(() => undefined), 24 * 3600_000).unref();
 await app.listen({ port: env.PORT, host: '0.0.0.0' });
 
 const shutdown = async () => {
   runtime.stop();
+  await mqttClient?.endAsync();
   await app.close();
   lockClient.release();
   await pool.end();

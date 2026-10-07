@@ -5,7 +5,7 @@ import {
   type AckMessage, type CompiledConfig, type Decision, type DeviceStatus, type HeartbeatMessage, type JunctionConfig,
   type OperatorCommand, type Outcome, type PendingCommand, type SensorEvent,
 } from '@ftms/domain';
-import { canonical, sha256, type Store, type ActorType } from '../adapters/postgres/store.js';
+import { canonical, sha256, type ActorType, type JunctionStore } from './ports.js';
 import { JunctionActor } from './actor.js';
 import { statusView } from './status.js';
 
@@ -35,7 +35,7 @@ export class Runtime {
   private timers = new Map<string, NodeJS.Timeout>();
   ready = false;
 
-  constructor(private readonly store: Store, private readonly gateway: ControllerGateway, private readonly clock: () => number = Date.now) {
+  constructor(private readonly store: JunctionStore, private readonly gateway: ControllerGateway, private readonly clock: () => number = Date.now) {
     this.events.setMaxListeners(500);
   }
 

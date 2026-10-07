@@ -1,27 +1,11 @@
-import { createHash } from 'node:crypto';
 import type { AuditRecord, Decision, JunctionConfig, JunctionState } from '@ftms/domain';
+import { canonical, sha256, type ActorType, type CommitMeta, type JunctionStore } from '../../application/ports.js';
 import { tx, type Client, type Pool } from './db.js';
 
-export type ActorType = 'SYSTEM' | 'SCHEDULER' | 'OPERATOR' | 'DEVICE' | 'SIMULATOR';
-
-export interface CommitMeta {
-  actorType: ActorType;
-  actorId?: string;
-  processedEvent?: { sourceId: string; eventId: string; payloadHash: Buffer };
-  operatorRequest?: { requestId: string; command: string; payload: unknown; requestedBy: string; idempotencyKey?: string };
-}
+export { canonical, sha256, type ActorType, type CommitMeta };
 
 export class ConcurrencyError extends Error {}
 
-/** Sorted-key JSON, used for payload hashes and the audit hash chain. */
-export function canonical(v: unknown): string {
-  if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  const o = v as Record<string, unknown>;
-  return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(',')}}`;
-}
-
-export const sha256 = (s: string | Buffer) => createHash('sha256').update(s).digest();
 const ZERO = Buffer.alloc(32);
 
 export interface AuditRow {
@@ -58,7 +42,7 @@ export async function appendAudit(c: Client, chainId: string, junctionId: string
   await c.query('UPDATE audit_chain_heads SET last_seq = $2, last_hash = $3 WHERE chain_id = $1', [chainId, seq, prev]);
 }
 
-export class Store {
+export class Store implements JunctionStore {
   constructor(private readonly pool: Pool) {}
 
   async loadJunctions(): Promise<{ config: JunctionConfig; state: JunctionState | null; epoch: number }[]> {
@@ -156,11 +140,11 @@ export class Store {
     await tx(this.pool, (c) => appendAudit(c, chainId, junctionId, records, new Date(), actorType, actorId));
   }
 
-  async reject(entry: { endpoint: string; sourceId?: string; remoteAddr?: string; reasonCode: string; detail?: string; payload?: unknown }) {
+  async reject(entry: { channel?: 'HTTP' | 'MQTT'; endpoint: string; sourceId?: string; remoteAddr?: string; reasonCode: string; detail?: string; payload?: unknown }) {
     const payload = entry.payload === undefined ? null : JSON.stringify(entry.payload).slice(0, 4096);
     await this.pool.query(
       'INSERT INTO rejected_events (channel, endpoint, source_id, remote_addr, reason_code, detail, payload) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      ['HTTP', entry.endpoint, entry.sourceId ?? null, entry.remoteAddr ?? null, entry.reasonCode, entry.detail ?? null, payload && JSON.stringify({ raw: payload })],
+      [entry.channel ?? 'HTTP', entry.endpoint, entry.sourceId ?? null, entry.remoteAddr ?? null, entry.reasonCode, entry.detail ?? null, payload && JSON.stringify({ raw: payload })],
     );
   }
 

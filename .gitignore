@@ -7,3 +7,5 @@ infra/mosquitto/passwd
 coverage
 *.md
 !README.md
+infra/mosquitto/acl
+.mqtt-creds.env
