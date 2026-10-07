@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ftms
+      POSTGRES_USER: ftms_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:-ftms_owner_dev}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-ftms_app_dev}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports: ["127.0.0.1:5433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ftms_owner -d ftms"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  db-data: {}

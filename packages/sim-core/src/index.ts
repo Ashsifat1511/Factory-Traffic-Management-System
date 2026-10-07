@@ -123,6 +123,15 @@ export class ControllerModel {
 
   nextTickAt(): number | null { return this.stopping?.doneAt ?? null; }
 
+  /** Local fail-safe (rule C-6): clear every head to RED through yellow without touching command fencing. */
+  localSafeStop(now: number): void {
+    if (this.stopping) return;
+    for (const g of this.groups) if (this.aspects[g] === 'GREEN') { this.aspects[g] = 'YELLOW'; this.yellowSince[g] = now; }
+    const yellow = this.groups.filter((g) => this.aspects[g] === 'YELLOW');
+    if (yellow.length === 0) return;
+    this.stopping = { commandId: this.lastAppliedCommandId ?? 'local-failsafe', doneAt: Math.max(...yellow.map((g) => (this.yellowSince[g] ?? now) + this.localYellowMs)) };
+  }
+
   heartbeat(now: number) {
     if (this.faults.offline) return null;
     let aspects = { ...this.aspects };

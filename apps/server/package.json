@@ -1,0 +1,25 @@
+{
+  "name": "@ftms/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "migrate": "tsx src/bootstrap/migrate-cli.ts",
+    "seed": "tsx src/bootstrap/seed-cli.ts",
+    "audit:verify": "tsx src/bootstrap/audit-verify-cli.ts"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.0",
+    "@types/pg": "^8.23.1"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@node-rs/argon2": "^2.2.2",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.1",
+    "zod": "^3.25.76"
+  }
+}
