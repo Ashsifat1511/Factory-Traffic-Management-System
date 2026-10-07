@@ -17,7 +17,7 @@ export const envSchema = z.object({
   PORT: z.coerce.number().default(8080),
   DATABASE_URL: z.string().url(),
   DATABASE_OWNER_URL: z.string().url(),
-  DASHBOARD_ORIGIN: z.string().default('http://localhost:5173'),
+  DASHBOARD_ORIGIN: z.string().default('http://localhost:3000,http://127.0.0.1:3000'),
   SESSION_COOKIE_SECURE: bool.default('false'),
   DEVICE_KEY_PEPPER: z.string().min(16),
   SIMULATION_MODE: bool.default('false'),

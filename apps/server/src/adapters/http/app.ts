@@ -84,7 +84,7 @@ export async function buildApp(deps: HttpDeps) {
     if (req.method !== 'GET') {
       // CSRF: SameSite=Strict cookie + custom header + Origin check (plan §14.4)
       const origin = req.headers.origin;
-      if (req.headers['x-ftms-request'] !== '1' || (origin && origin !== deps.dashboardOrigin)) return problem(reply, 403, 'CSRF_CHECK_FAILED');
+      if (req.headers['x-ftms-request'] !== '1' || (origin && !deps.dashboardOrigin.split(',').includes(origin))) return problem(reply, 403, 'CSRF_CHECK_FAILED');
     }
   };
   const requireDevice = (kind: Device['kind']) => async (req: FastifyRequest, reply: FastifyReply) => {
