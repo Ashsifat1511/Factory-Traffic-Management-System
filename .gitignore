@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.sim-keys.env
+infra/mosquitto/certs
+infra/mosquitto/passwd
+coverage
+*.md
+!README.md

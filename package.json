@@ -1,0 +1,21 @@
+{
+  "name": "ftms",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "dev": "npm run dev -w apps/server"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

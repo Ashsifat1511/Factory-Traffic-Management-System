@@ -1,0 +1,26 @@
+{
+  "junction_id": "A",
+  "name": "Junction A - Cutting hall crossing",
+  "version": 1,
+  "approaches": ["NORTH", "SOUTH", "EAST", "WEST"],
+  "signal_groups": [
+    { "id": "NORTH", "approach": "NORTH" },
+    { "id": "SOUTH", "approach": "SOUTH" },
+    { "id": "EAST", "approach": "EAST" },
+    { "id": "WEST", "approach": "WEST" }
+  ],
+  "phases": [
+    { "id": "NORTH_SOUTH", "signal_groups": ["NORTH", "SOUTH"] },
+    { "id": "EAST_WEST", "signal_groups": ["EAST", "WEST"] }
+  ],
+  "conflicts": [["EAST", "NORTH"], ["NORTH", "WEST"], ["EAST", "SOUTH"], ["SOUTH", "WEST"]],
+  "timings": { "green_block_s": 30, "min_green_s": 10, "max_green_s": 90, "yellow_s": 5, "all_red_s": 3 },
+  "scheduling": {
+    "weights": { "EMERGENCY": 10, "TRUCK": 5, "MATERIAL_CARRIER": 3, "FORKLIFT": 3, "EMPLOYEE_VEHICLE": 1, "UNKNOWN": 1 },
+    "aging_s": 60, "hysteresis": 1.25, "starvation_s": 120, "recall_weight": 1
+  },
+  "emergency": { "stale_after_s": 30, "hold_timeout_s": 120, "absolute_cap_s": 300, "contested_slice_s": 30, "max_active": 4, "cancel_cooldown_s": 60 },
+  "manual": { "lease_s": 600, "max_lease_s": 3600 },
+  "queue": { "capacity_per_approach": 100, "entry_ttl_s": 600, "stale_arrival_s": 300, "tombstone_ttl_s": 900 },
+  "controller": { "ack_timeout_ms": 2000, "max_retries": 2, "command_ttl_ms": 3000, "safe_stop_ttl_ms": 10000, "heartbeat_interval_s": 5, "missed_heartbeats": 3, "recovery_timeout_s": 10 }
+}
