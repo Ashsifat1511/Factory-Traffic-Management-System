@@ -146,13 +146,21 @@ describe('database guarantees', () => {
   });
 
   it('allows at most one PENDING command per junction', async () => {
-    const insert = (id: string, seq: number) => db.owner.query(
-      `INSERT INTO controller_commands (command_id, junction_id, seq, epoch, kind, step, cause, status, issued_at)
-       VALUES ($1, 'A', $2, 0, 'SAFE_STOP', 'TEST', 'TEST', 'PENDING', now())`, [id, seq]);
-    const { rows } = await db.owner.query("SELECT count(*)::int AS n FROM controller_commands WHERE junction_id = 'A' AND status = 'PENDING'");
-    if (rows[0].n === 0) await insert('t-pending-1', 10_000_001);
-    await expect(insert('t-pending-2', 10_000_002)).rejects.toThrow(/one_pending_command_per_junction/);
-    await db.owner.query("DELETE FROM controller_commands WHERE command_id LIKE 't-pending-%'");
+    // On a throwaway junction inside a rolled-back transaction, so it never races the live junction A.
+    const c = await db.owner.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query("INSERT INTO junctions (junction_id, name, active_config_version, created_by) VALUES ('ZTEST', 'test', 1, 'test')");
+      await c.query("INSERT INTO junction_configs (junction_id, version, config, created_by) VALUES ('ZTEST', 1, '{}', 'test')");
+      const insert = (id: string, seq: number) => c.query(
+        `INSERT INTO controller_commands (command_id, junction_id, seq, epoch, kind, step, cause, status, issued_at)
+         VALUES ($1, 'ZTEST', $2, 0, 'SAFE_STOP', 'TEST', 'TEST', 'PENDING', now())`, [id, seq]);
+      await insert('t-pending-1', 1);
+      await expect(insert('t-pending-2', 2)).rejects.toThrow(/one_pending_command_per_junction/);
+    } finally {
+      await c.query('ROLLBACK');
+      c.release();
+    }
   });
 
   it('audit:verify passes on a real chain and detects a tampered row', async () => {
