@@ -15,6 +15,45 @@ services:
       interval: 5s
       retries: 10
 
+  # Full stack in containers: `docker compose --profile app up -d --build` (after `npm run db:seed` on the host,
+  # which writes .sim-keys.env). The dev flow runs server and simulator on the host instead, so these are opt-in.
+  server:
+    build: { context: ., dockerfile: apps/server/Dockerfile }
+    profiles: ["app"]
+    env_file: [{ path: .env, required: true }, { path: .mqtt-creds.env, required: false }]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://ftms_app:${DB_APP_PASSWORD:-ftms_app_dev}@db:5432/ftms
+      DATABASE_OWNER_URL: postgres://ftms_owner:${DB_OWNER_PASSWORD:-ftms_owner_dev}@db:5432/ftms
+      CONTROLLER_SIM_URL: http://controller-sim:8090
+      DASHBOARD_ORIGIN: http://localhost:8088,http://127.0.0.1:8088
+      MQTT_URL: mqtts://mosquitto:8883
+    volumes: ["./infra/mosquitto/certs:/app/infra/mosquitto/certs:ro"]
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["127.0.0.1:8080:8080"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+
+  controller-sim:
+    build: { context: ., dockerfile: apps/controller-sim/Dockerfile }
+    profiles: ["app"]
+    env_file: [{ path: .env, required: true }, { path: .sim-keys.env, required: true }, { path: .mqtt-creds.env, required: false }]
+    environment:
+      BACKEND_URL: http://server:8080
+      MQTT_URL: mqtts://mosquitto:8883
+    volumes: ["./infra/mosquitto/certs:/app/infra/mosquitto/certs:ro"]
+    restart: unless-stopped # keeps its lights through a backend restart
+    read_only: true
+    tmpfs: ["/tmp"]
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    profiles: ["app"]
+    ports: ["127.0.0.1:8088:80"]
+    depends_on: [server]
+    restart: unless-stopped
+
   # MQTT transport (M6): `docker compose --profile mqtt up -d mosquitto` after `npm run certs:dev` and `npm run mqtt:users`.
   mosquitto:
     image: eclipse-mosquitto:2.0.20

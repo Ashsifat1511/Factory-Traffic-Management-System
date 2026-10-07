@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+.git
+.env
+.sim-keys.env
+.mqtt-creds.env
+infra/mosquitto/certs
+infra/mosquitto/passwd
+infra/mosquitto/acl
+coverage
+docs
