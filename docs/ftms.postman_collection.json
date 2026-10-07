@@ -1,0 +1,1884 @@
+{
+  "info": {
+    "name": "FTMS – Factory Traffic Management System",
+    "description": "One folder per spec §15 scenario. Run \"00 Setup\" first. Requires SIMULATION_MODE=true, the seeded users and the device keys from .sim-keys.env in the environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 Setup",
+      "description": "Log in as operator (session cookie kept by Postman) and reset the simulator.",
+      "item": [
+        {
+          "name": "Login (operator)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"username\": \"{{operatorUser}}\",\n  \"password\": \"{{operatorPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset simulator faults",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/controllers/A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "controllers",
+                "A"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"latency_ms\": 200,\n  \"faults\": {\n    \"dropAcks\": false,\n    \"dropNextAck\": false,\n    \"nackNext\": false,\n    \"wrongStateNext\": false,\n    \"offline\": false,\n    \"unsafeHeartbeat\": false\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 Normal traffic",
+      "description": "Vehicles from several directions; the scheduler picks a phase. Wait ~20 s, then check Status.",
+      "item": [
+        {
+          "name": "NORTH arrives (sensor key)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeyNorth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"NORTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"N-1\",\n  \"vehicle_type\": \"EMPLOYEE_VEHICLE\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "EAST arrives (sensor key)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeyEast}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"EAST\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"E-1\",\n  \"vehicle_type\": \"FORKLIFT\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Priority traffic",
+      "description": "A TRUCK outweighs employee vehicles. Check PHASE_DECISION in history after the next block boundary.",
+      "item": [
+        {
+          "name": "Two employee vehicles NORTH",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"NORTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"EMP-2\",\n  \"vehicle_type\": \"EMPLOYEE_VEHICLE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Truck EAST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"EAST\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"TRK-2\",\n  \"vehicle_type\": \"TRUCK\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Last phase decision",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/history?type=PHASE_DECISION&limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "history"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Emergency preemption",
+      "description": "EMERGENCY vehicle: the current green goes YELLOW → ALL_RED → emergency green. Poll Status every 2 s.",
+      "item": [
+        {
+          "name": "Emergency arrives WEST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"WEST\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"EV-3\",\n  \"vehicle_type\": \"EMERGENCY\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emergency cleared WEST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"WEST\",\n  \"event_type\": \"VEHICLE_CLEARED\",\n  \"vehicle_id\": \"EV-3\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Manual override",
+      "description": "Manual green, a stale expected_version (409), and return to automatic.",
+      "item": [
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('version', pm.response.json().version);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manual green WEST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"MANUAL_GREEN_REQUEST\",\n  \"direction\": \"WEST\",\n  \"reason\": \"loading bay\",\n  \"expected_version\": {{version}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same request, stale version (409)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"MANUAL_GREEN_REQUEST\",\n  \"direction\": \"WEST\",\n  \"reason\": \"loading bay\",\n  \"expected_version\": {{version}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extend manual lease",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"EXTEND_MANUAL\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Return to automatic",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"RETURN_TO_AUTOMATIC\",\n  \"reason\": \"done\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Duplicate event",
+      "description": "Send the identical event twice: 201 then 200 duplicate. The third reuses the id with a different payload: 409.",
+      "item": [
+        {
+          "name": "Prepare a fixed event id",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/health/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "live"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('dupId', 'dup-' + Date.now());",
+                  "pm.collectionVariables.set('dupSeq', Date.now());",
+                  "pm.collectionVariables.set('dupTs', new Date().toISOString());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "First delivery (201)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeySouth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{dupId}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"SOUTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"D-5\",\n  \"vehicle_type\": \"FORKLIFT\",\n  \"sequence_no\": {{dupSeq}},\n  \"timestamp\": \"{{dupTs}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same event again (200 duplicate)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeySouth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{dupId}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"SOUTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"D-5\",\n  \"vehicle_type\": \"FORKLIFT\",\n  \"sequence_no\": {{dupSeq}},\n  \"timestamp\": \"{{dupTs}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same id, different payload (409)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeySouth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{dupId}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"SOUTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"D-5\",\n  \"vehicle_type\": \"TRUCK\",\n  \"sequence_no\": {{dupSeq}},\n  \"timestamp\": \"{{dupTs}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sensor posting for another lane (403)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeySouth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"NORTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"X-5\",\n  \"vehicle_type\": \"TRUCK\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Vehicle clearance",
+      "description": "Arrival then clearance reduces the queue; a second clear never goes below zero.",
+      "item": [
+        {
+          "name": "Arrive WEST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeyWest}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"WEST\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"VH-6\",\n  \"vehicle_type\": \"TRUCK\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clear WEST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeyWest}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"WEST\",\n  \"event_type\": \"VEHICLE_CLEARED\",\n  \"vehicle_id\": \"VH-6\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clear again (no-op)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{sensorKeyWest}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"junction_id\": \"A\",\n  \"direction\": \"WEST\",\n  \"event_type\": \"VEHICLE_CLEARED\",\n  \"vehicle_id\": \"VH-6\",\n  \"sequence_no\": {{seq}},\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 Controller failure",
+      "description": "Drop ACKs: retries then FAILED + SAFE_STOP. Then offline (heartbeat watchdog), then reconnect.",
+      "item": [
+        {
+          "name": "Drop all ACKs",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/controllers/A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "controllers",
+                "A"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"faults\": {\n    \"dropAcks\": true\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "All-red hold (needs ACKs)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"ALL_RED_HOLD\",\n  \"reason\": \"controller test\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Restore ACKs, go offline",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/controllers/A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "controllers",
+                "A"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"faults\": {\n    \"dropAcks\": false,\n    \"offline\": true\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Back online",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/controllers/A",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "controllers",
+                "A"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"faults\": {\n    \"offline\": false\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume after fault",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"RESUME_AFTER_FAULT\",\n  \"reason\": \"controller checked\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Release hold",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"RELEASE_HOLD\",\n  \"reason\": \"done\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown command ACK (422)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/controller-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "controller-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"type\": \"ACK\",\n  \"command_id\": \"cmd-does-not-exist\",\n  \"junction_id\": \"A\",\n  \"status\": \"ACK\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 Restart",
+      "description": "Stop the server (Ctrl+C) and start it again, then send these. Expect UNKNOWN → SAFE_STOP → normal operation.",
+      "item": [
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/health/ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "ready"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Last RECOVERY_STARTED",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/history?type=RECOVERY_STARTED&limit=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "history"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 Concurrent events",
+      "description": "Use the Collection Runner with delay 0 on this folder: the actor serialises them; the emergency wins and the manual request gets 409.",
+      "item": [
+        {
+          "name": "Truck NORTH",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"NORTH\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"TR-9\",\n  \"vehicle_type\": \"TRUCK\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emergency EAST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"EAST\",\n  \"event_type\": \"VEHICLE_ARRIVED\",\n  \"vehicle_id\": \"EV-9\",\n  \"vehicle_type\": \"EMERGENCY\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manual green WEST (409 emergency active)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/junctions/A/commands",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "junctions",
+                "A",
+                "commands"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"command\": \"MANUAL_GREEN_REQUEST\",\n  \"direction\": \"WEST\",\n  \"reason\": \"conflict\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emergency cleared EAST",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/sim/sensor-events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sim",
+                "sensor-events"
+              ]
+            },
+            "header": [
+              {
+                "key": "x-ftms-request",
+                "value": "1"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"junction_id\": \"A\",\n  \"direction\": \"EAST\",\n  \"event_type\": \"VEHICLE_CLEARED\",\n  \"vehicle_id\": \"EV-9\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const raw = pm.request.body && pm.request.body.raw;",
+          "const m = raw && raw.match(/direction.: .([A-Z_]+)/);",
+          "if (m) { const k = 'seq_' + m[1]; const v = (Number(pm.collectionVariables.get(k)) || Date.now()) + 1; pm.collectionVariables.set(k, v); pm.collectionVariables.set('seq', v); }"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "version",
+      "value": "0"
+    },
+    {
+      "key": "seq",
+      "value": "1"
+    }
+  ]
+}

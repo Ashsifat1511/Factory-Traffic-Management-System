@@ -9,7 +9,11 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b",
-    "dev": "npm run dev -w apps/server"
+    "dev": "npm run dev -w apps/server",
+    "scenario": "tsx scripts/scenarios.ts",
+    "postman": "tsx scripts/postman.ts",
+    "db:migrate": "npm run migrate -w @ftms/server",
+    "db:seed": "npm run seed -w @ftms/server"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
